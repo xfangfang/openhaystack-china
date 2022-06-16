@@ -151,8 +151,8 @@ struct FindMyReport: Codable {
 }
 
 struct FindMyLocationReport: Codable {
-    let latitude: Double
-    let longitude: Double
+    var latitude: Double
+    var longitude: Double
     let accuracy: UInt8
     let datePublished: Date
     let timestamp: Date?
@@ -161,14 +161,26 @@ struct FindMyLocationReport: Codable {
     var location: CLLocation {
         return CLLocation(latitude: latitude, longitude: longitude)
     }
+    
+    // π
+    let pi = 3.1415926535897932384626;
+    // 长半轴
+    let a = 6378245.0;
+    // 扁率
+    let ee = 0.00669342162296594323;
+    
 
     init(lat: Double, lng: Double, acc: UInt8, dP: Date, t: Date, c: UInt8) {
-        self.latitude = lat
-        self.longitude = lng
         self.accuracy = acc
         self.datePublished = dP
         self.timestamp = t
         self.confidence = c
+        self.latitude = lat
+        self.longitude = lng
+        
+        let position = self.trans(lng: lng, lat: lat)
+        self.longitude = position.0
+        self.latitude = position.1
     }
 
     init(from decoder: Decoder) throws {
@@ -176,7 +188,7 @@ struct FindMyLocationReport: Codable {
 
         self.latitude = try values.decode(Double.self, forKey: .latitude)
         self.longitude = try values.decode(Double.self, forKey: .longitude)
-
+        
         do {
             let uAcc = try values.decode(UInt8.self, forKey: .accuracy)
             self.accuracy = uAcc
@@ -188,6 +200,43 @@ struct FindMyLocationReport: Codable {
         self.datePublished = try values.decode(Date.self, forKey: .datePublished)
         self.timestamp = try? values.decode(Date.self, forKey: .timestamp)
         self.confidence = try? values.decode(UInt8.self, forKey: .confidence)
+        
+        let position = self.trans(lng: self.longitude, lat: self.latitude)
+        self.longitude = position.0
+        self.latitude = position.1
+    }
+    
+    func trans(lng: Double, lat: Double) -> (Double, Double) {
+        if (lng < 72.004 || lng > 137.8347 || lat < 0.8293 || lat > 55.8271) {
+            // out of China
+            return (lng, lat)
+        } else {
+            var dlat = self.transformlat(lng: lng - 105.0, lat: lat - 35.0);
+            var dlng = self.transformlng(lng: lng - 105.0, lat: lat - 35.0);
+            let radlat = lat / 180.0 * pi;
+            var magic = sin(radlat);
+            magic = 1 - ee * magic * magic;
+            let sqrtmagic = sqrt(magic);
+            dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * pi);
+            dlng = (dlng * 180.0) / (a / sqrtmagic * cos(radlat) * pi);
+            return (lng + dlng, lat + dlat)
+        }
+    }
+    
+    func transformlat(lng: Double, lat: Double)-> Double {
+        var ret = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * sqrt(abs(lng));
+        ret += (20.0 * sin(6.0 * lng * pi) + 20.0 * sin(2.0 * lng * pi)) * 2.0 / 3.0;
+        ret += (20.0 * sin(lat * pi) + 40.0 * sin(lat / 3.0 * pi)) * 2.0 / 3.0;
+        ret += (160.0 * sin(lat / 12.0 * pi) + 320 * sin(lat * pi / 30.0)) * 2.0 / 3.0;
+        return ret;
+    }
+
+    func transformlng(lng: Double, lat: Double)-> Double {
+        var ret = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * sqrt(abs(lng));
+        ret += (20.0 * sin(6.0 * lng * pi) + 20.0 * sin(2.0 * lng * pi)) * 2.0 / 3.0;
+        ret += (20.0 * sin(lng * pi) + 40.0 * sin(lng / 3.0 * pi)) * 2.0 / 3.0;
+        ret += (150.0 * sin(lng / 12.0 * pi) + 300.0 * sin(lng / 30.0 * pi)) * 2.0 / 3.0;
+        return ret;
     }
 
 }
